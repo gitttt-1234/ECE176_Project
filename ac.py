@@ -1,10 +1,10 @@
 import os
-import math
-import copy
 import torch
 import numpy as np
+import torch.nn.functional as F
 from torch import optim
-from models import BaseVAE
+from torch.autograd import Variable, grad
+from models import BaseVAE, Actor, Critic
 from models.types_ import *
 from utils import data_loader
 import pytorch_lightning as pl
@@ -14,16 +14,18 @@ from torchvision.datasets import CelebA
 from torch.utils.data import DataLoader
 
 
-class ACEXperiment(pl.LightningModule):
+class LitAC(pl.LightningModule):
 
     def __init__(self,
                  vae_model: BaseVAE,
-                 ac_model: BaseVAE,
+                 actor: Actor,
+                 critic: Critic,
                  params: dict) -> None:
-        super(ACEXperiment, self).__init__()
+        super(LitAC, self).__init__()
 
         self.vae_model = vae_model
-        self.ac_model = ac_model
+        self.actor = actor
+        self.critic = critic
         self.params = params
         self.d_model = self.params['latent_dim']
         self.curr_device = None
@@ -48,54 +50,110 @@ class ACEXperiment(pl.LightningModule):
         fake_attr = torch.index_select(self.labels, 0, selection)
         return fake_attr
     
+    def critic_loss_function(self,
+                      pred,
+                      target,
+                      all_z,
+                      all_attr,) -> dict:
+        """
+        :return:
+        """
+        loss = F.binary_cross_entropy(pred, target, size_average=True)
+        bs = all_z.shape[0]
+        real_data = all_z[:bs // 3]
+        fake_data = all_z[bs // 3: (2 * bs) // 3]
+        real_attr = all_attr[:bs // 3]
+        alpha = torch.rand((real_data.shape[0], self.d_model))
+        differences = fake_data - real_data
+        interpolates = real_data + (alpha * differences)
+        interpolates = Variable(interpolates, requires_grad=True)
+        interp_pred = self.critic(interpolates, real_attr)
+        slopes = (grad(interp_pred.sum(), interpolates)[0].square().sum(dim=-1) + 1e-10).sqrt()
+        gradient_penalty = torch.mean((slopes - 1.)**2)
+        return {'loss': loss + 10 * gradient_penalty, 
+                    'critic_loss': loss,
+                    'gradient_loss': gradient_penalty}
+    
+    def actor_loss_function(self, var,
+                                z, 
+                                real_z, 
+                                fake_z,
+                                z_critic_out, 
+                                z_critic_real, 
+                                actor,):
+        weight_var = torch.mean(var, 0, True)
+        distance_penalty = torch.mean(torch.log(1 + (z - fake_z).pow(2)) * weight_var.pow(-2))
+        distance_penalty += torch.mean(torch.log(1 + (real_z - z).pow(2)) * weight_var.pow(-2))
+        
+        # actor_loss = -torch.mean(torch.clip(F.sigmoid(z_critic_out), 1e-15, 1 - 1e-15).log()) \
+        #                 -torch.mean(torch.clip(F.sigmoid(z_critic_real), 1e-15, 1 - 1e-15).log())
+        actor_loss = F.binary_cross_entropy(z_critic_out, actor, size_average=False)\
+                        + F.binary_cross_entropy(z_critic_real, actor, size_average=False)
+        # print(actor_loss.shape, distance_penalty.shape)
+        return {'distance_penalty': distance_penalty, 
+                    'actor_loss': actor_loss, 
+                    'loss': actor_loss + 0.00001 * distance_penalty}
+        
     def training_step(self, batch, batch_idx, optimizer_idx = 0):
-        real_img, labels = batch
+        real_img, real_attr = batch
         bs = real_img.shape[0]
-        real_data = torch.ones(bs,1)
-        fake_data = torch.zeros(bs,1)
-        fake_z = torch.randn(bs, self.d_model)
+        real_r = torch.ones(bs,1)
+        fake_r = torch.zeros(bs,1)
+        fake_z_prior = torch.randn(bs, self.d_model)
         fake_attr = self.fake_attr_generate(bs)
         with torch.no_grad():
             mu, var = self.vae_model.encode(real_img)
-        z = self.vae_model.reparameterize(mu, var)
+        real_z = self.vae_model.reparameterize(mu, var)
         
         self.curr_device = real_img.device
 
         if  np.random.rand(1) < 0.1:
-            input_data = torch.cat([z, fake_z, z],dim=0) 
-            input_attr = torch.cat([labels, labels, fake_attr],dim=0)
-            real_labels = torch.cat([real_data, fake_data, fake_data])
+            all_z = torch.cat([real_z, fake_z_prior, real_z], dim=0) 
         else:
-            z_g = self.ac_model.actor_forward(fake_z, labels)		
-            input_data = torch.cat([z, z_g, z],dim=0) 
-            input_attr = torch.cat([labels, labels, fake_attr],dim=0)
-            real_labels = torch.cat([real_data, fake_data, fake_data])
+            z_g = self.actor(fake_z_prior, real_attr)		
+            all_z = torch.cat([real_z, z_g, real_z], dim=0) 
+        all_attr = torch.cat([real_attr, real_attr, fake_attr],dim=0)
+        all_r = torch.cat([real_r, fake_r, fake_r])
         
-        logit_out = self.ac_model.real_critic_forward(input_data, input_attr)
-        critic_loss = self.ac_model.critic_loss_function(logit_out, real_labels)
+        logit_out = self.critic(all_z, all_attr)
+        critic_loss = self.critic_loss_function(logit_out, 
+                                                    all_r,
+                                                    all_z,
+                                                    all_attr)
         loss = critic_loss['loss']
         
         if batch_idx > 0 and batch_idx % 10 == 0:
-            fake_z = torch.randn(bs, self.d_model)
+            # fake_z = torch.randn(bs, self.d_model)
             # fake_z = copy.deepcopy(fake_z)
-            actor_z = self.ac_model.actor_forward(fake_z, labels) 
-            real_z = self.ac_model.actor_forward(z, labels)
-            zg_critic_out = self.ac_model.real_critic_forward(actor_z, labels)
-            zg_critic_real = self.ac_model.real_critic_forward(real_z, labels)
-            actor_loss = self.ac_model.actor_loss_function(var, z, fake_z, real_z, actor_z, zg_critic_out, zg_critic_real, real_data)
+            fake_z_gen = self.actor(fake_z_prior, real_attr) 
+            real_z_gen = self.actor(real_z, real_attr)
+            zg_critic_out = self.critic(fake_z_gen, real_attr)
+            zg_critic_real = self.critic(real_z_gen, real_attr)
+            actor_loss = self.actor_loss_function(var, 
+                                                                real_z,
+                                                                real_z_gen, 
+                                                                fake_z_gen, 
+                                                                zg_critic_out, 
+                                                                zg_critic_real, 
+                                                                real_r)
             loss += actor_loss['loss']
         return loss
 
     def validation_step(self, batch, batch_idx, optimizer_idx = 0):
-        real_img, labels = batch
+        real_img, real_attr = batch
+        bs = real_img.shape[0]
+        fake_z_prior = torch.randn(bs, self.d_model)
+        with torch.no_grad():
+            mu, var = self.vae_model.encode(real_img)
+        real_z = self.vae_model.reparameterize(mu, var)
+        real_z_gen = self.actor(real_z, real_attr)
+        fake_z_gen = self.actor(fake_z_prior, real_attr)
+        pred_eval = self.critic(real_z, real_attr)
+        pred_gen = self.critic(fake_z_gen, real_attr)
         self.curr_device = real_img.device
-        results = self.forward(real_img, labels = labels)
-        val_loss = self.vae_model.loss_function(*results,
-                                            M_N = 1.0, #real_img.shape[0]/ self.num_val_imgs,
-                                            optimizer_idx = optimizer_idx,
-                                            batch_idx = batch_idx)
 
-        self.log_dict({f"val_{key}": val.item() for key, val in val_loss.items()}, sync_dist=True)
+        self.log_dict({f"val_z": torch.mean(pred_eval).item()}, sync_dist=True)
+        self.log_dict({f"val_loss": F.mse_loss(real_z, real_z_gen, reduction='mean').item()}, sync_dist=True)
 
         
     def on_validation_end(self) -> None:
@@ -111,7 +169,7 @@ class ACEXperiment(pl.LightningModule):
         
         fake_z = torch.randn(bs, self.d_model)
         fake_z = fake_z.to(self.device)
-        z_g = self.ac_model.actor_forward(fake_z, test_label)
+        z_g = self.actor(fake_z, test_label)
         z_g_recon = self.vae_model.decode(z_g)
         prior_recon = self.vae_model.decode(fake_z)
         z, var = self.vae_model.encode(test_input)
@@ -141,7 +199,7 @@ class ACEXperiment(pl.LightningModule):
                 test_labels = test_labels.expand(64,-1)
 
                 sample = torch.randn(64, self.d_model).to(self.device)
-                sample = self.ac_model.actor_forward(sample, test_labels)
+                sample = self.actor(sample, test_labels)
 
                 samples = self.vae_model.decode(sample)
                 vutils.save_image(samples.cpu().data,
@@ -158,8 +216,11 @@ class ACEXperiment(pl.LightningModule):
         optims = []
         scheds = []
 
-        optimizer = optim.Adam(self.ac_model.parameters(),
-                               lr=self.params['LR'],
+        optimizer = optim.Adam(self.actor.parameters(),
+                               lr=self.params['actor_LR'],
+                               weight_decay=self.params['weight_decay'])
+        optimizer = optim.Adam(self.critic.parameters(),
+                               lr=self.params['critic_LR'],
                                weight_decay=self.params['weight_decay'])
         optims.append(optimizer)
         # Check if more than 1 optimizer is required (Used for adversarial training)

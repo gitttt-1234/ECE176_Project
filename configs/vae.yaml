@@ -1,13 +1,13 @@
 model_params:
   name: 'VanillaVAE'
   in_channels: 3
-  latent_dim: 256
+  latent_dim: 1024
 
 
 data_params:
-  data_path: "/content/drive/MyDrive/Colab Notebooks/ECE176_PR/data/"
-  train_batch_size: 64
-  val_batch_size:  64
+  data_path: "/home/chandramouli/Documents/UCSD-Assignments/ECE-176/ECE176_PR/data"
+  train_batch_size: 32
+  val_batch_size:  32
   patch_size: 64
   num_workers: 8
   num_labels: 10
@@ -22,9 +22,9 @@ exp_params:
 
 trainer_params:
   gpus: [0]
-  max_epochs: 100
+  max_epochs: 300
 
 logging_params:
   save_dir: "logs/"
-  name: "VanillaVAE"
+  name: "STLVAE"
   

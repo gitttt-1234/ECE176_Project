@@ -75,6 +75,12 @@ class VAEXperiment(pl.LightningModule):
                                        f"recons_{self.logger.name}_Epoch_{self.current_epoch}.png"),
                           normalize=True,
                           nrow=12)
+        vutils.save_image(test_input,
+                          os.path.join(self.logger.log_dir , 
+                                       "Dataset", 
+                                       f"data_{self.logger.name}_Epoch_{self.current_epoch}.png"),
+                          normalize=True,
+                          nrow=12)
 
         try:
             samples = self.model.sample(144,

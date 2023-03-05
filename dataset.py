@@ -9,7 +9,7 @@ from torchvision.datasets.folder import default_loader
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 from torchvision import transforms
-from torchvision.datasets import CelebA, CIFAR10
+from torchvision.datasets import CelebA, CIFAR10, STL10
 import zipfile
 
 
@@ -39,6 +39,17 @@ class MyCelebA(CelebA):
 
 
 class MyCIFAR10(CIFAR10):
+    """
+    A work-around to address issues with pytorch's celebA dataset class.
+    
+    Download and Extract
+    URL : https://drive.google.com/file/d/1m8-EBPgi5MRubrm6iQjafK2QMHDBMSfJ/view?usp=sharing
+    """
+    
+    def _check_integrity(self) -> bool:
+        return True
+    
+class MySTL10(STL10):
     """
     A work-around to address issues with pytorch's celebA dataset class.
     
@@ -142,13 +153,17 @@ class VAEDataset(LightningDataModule):
 #       =========================  CelebA Dataset  =========================
     
         train_transforms = transforms.Compose([
+                                            #   transforms.RandomHorizontalFlip(),
                                               transforms.ToTensor(),
-                                              transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+                                            #   transforms.CenterCrop(96),
+                                              transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.25, 0.25, 0.25)),
                                               transforms.Resize(self.patch_size),])
         
         val_transforms = transforms.Compose([
+                                            # transforms.RandomHorizontalFlip(),
                                             transforms.ToTensor(),
-                                            transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
+                                            # transforms.CenterCrop(96),
+                                            transforms.Normalize(mean=(0.5, 0.5, 0.5), std=(0.25, 0.25, 0.25)),
                                             transforms.Resize(self.patch_size),])
         target_transforms = transforms.Compose([
                                  lambda x:torch.LongTensor([x]), # or just torch.tensor
@@ -162,8 +177,14 @@ class VAEDataset(LightningDataModule):
             target_transform=target_transforms,
             download=True,
         )
+        # self.train_dataset = STL10(
+        #     self.data_dir,
+        #     split='train',
+        #     transform=train_transforms,
+        #     target_transform=target_transforms,
+        #     download=True,
+        # )
         
-        # Replace CelebA with your dataset
         self.val_dataset = CIFAR10(
             self.data_dir,
             train=False,
@@ -171,6 +192,15 @@ class VAEDataset(LightningDataModule):
             target_transform=target_transforms,
             download=True,
         )
+        #
+        # # Replace CelebA with your dataset
+        # self.val_dataset = STL10(
+        #     self.data_dir,
+        #     split='test',
+        #     transform=val_transforms,
+        #     target_transform=target_transforms,
+        #     download=True,
+        # )
 #       ===============================================================
         
     def train_dataloader(self) -> DataLoader:
