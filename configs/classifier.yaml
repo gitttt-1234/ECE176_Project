@@ -1,0 +1,28 @@
+model_params:
+  name: 'Classifier'
+  in_channels: 3
+  n_class: 10
+
+
+data_params:
+  data_path: "/content/drive/MyDrive/ECE176_PR - Copy/data/"
+  train_batch_size: 64
+  val_batch_size:  64
+  patch_size: 64
+  num_workers: 8
+  num_labels: 10
+
+
+exp_params:
+  LR: 0.005
+  weight_decay: 0.0
+  manual_seed: 1265
+
+trainer_params:
+  max_epochs: 20
+  gpus: [0]
+
+logging_params:
+  save_dir: "logs/"
+  name: "Classifier"
+  
