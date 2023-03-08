@@ -2,7 +2,8 @@ import os
 import math
 import torch
 from torch import optim
-from models import BaseVAE
+from models import BaseVAE, Actor
+from models import *
 from models.types_ import *
 from utils import data_loader
 import pytorch_lightning as pl
@@ -12,17 +13,23 @@ from torchvision.datasets import CIFAR10
 from torch.utils.data import DataLoader
 
 
-class VAEXperiment(pl.LightningModule):
+class ClassifierExperiment(pl.LightningModule):
 
     def __init__(self,
                  vae_model,
+                 vanilla_vae_model: BaseVAE,
+                 actor: Actor,
+                 exp_flag: int,
                  params: dict) -> None:
-        super(VAEXperiment, self).__init__()
+        super(ClassifierExperiment, self).__init__()
 
         self.model = vae_model
+        self.vae_model = vanilla_vae_model
+        self.actor = actor
         self.params = params
         self.curr_device = None
         self.hold_graph = False
+        self.exp_flag = exp_flag
         try:
             self.hold_graph = self.params['retain_first_backpass']
         except:
@@ -32,9 +39,45 @@ class VAEXperiment(pl.LightningModule):
         return self.model(input, **kwargs)
 
     def training_step(self, batch, batch_idx, optimizer_idx = 0):
+        
+        
         real_img, labels = batch
         self.curr_device = real_img.device
-
+        bs = real_img.shape[0]
+        
+        if self.exp_flag!=0:
+            if self.exp_flag == 1:
+                with torch.no_grad():
+                    mu, var = self.vae_model.encode(real_img)
+                    real_z = self.vae_model.reparameterize(mu, var)
+                    noise = torch.randn(real_z.shape)
+                    noise = noise.to(self.curr_device)
+                    z = real_z+noise
+                    img_gen = self.vae_model.decode(z)
+            elif self.exp_flag == 2:  
+                with torch.no_grad():
+                    fake_z = torch.randn(bs, self.d_model)
+                    fake_z = fake_z.to(self.device)
+                    z_g = self.actor(fake_z, labels)
+                    img_gen = self.vae_model.decode(z_g)
+                
+            random_indices_real_img = torch.randint(low=0, high=bs,size=(bs//2,))
+            random_indices_real_img = random_indices_real_img.to(self.curr_device)
+            random_indices_img_z = torch.randint(low=0, high=bs,size=(bs//2,))
+            random_indices_img_z = random_indices_img_z.to(self.curr_device)
+            
+            real_img = torch.index_select(real_img, 0, random_indices_real_img)
+            img_gen = torch.index_select(img_gen, 0, random_indices_img_z)
+            real_img = torch.cat((real_img,img_gen), 0)
+            
+            labels_real = torch.index_select(labels, 0, random_indices_real_img)
+            labels_img = torch.index_select(labels, 0, random_indices_img_z)
+            labels = torch.cat((labels_real,labels_img), 0)
+            
+            real_img = real_img.to(self.curr_device)
+            labels = labels.to(self.curr_device)
+        
+        
         results = self.forward(real_img)
         train_loss = self.model.loss_function(results,labels, #al_img.shape[0]/ self.num_train_imgs,
                                               optimizer_idx=optimizer_idx,
