@@ -29,7 +29,7 @@ exp_params:
   num_labels: 10
 
 trainer_params:
-  gpus: 0
+  gpus: [0]
   max_epochs: 100
 
 logging_params:

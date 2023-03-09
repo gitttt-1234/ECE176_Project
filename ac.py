@@ -63,7 +63,7 @@ class LitAC(pl.LightningModule):
         real_data = all_z[:bs // 3]
         fake_data = all_z[bs // 3: (2 * bs) // 3]
         real_attr = all_attr[:bs // 3]
-        alpha = torch.rand((real_data.shape[0], self.d_model))
+        alpha = torch.rand((real_data.shape[0], self.d_model)).to(self.device)
         differences = fake_data - real_data
         interpolates = real_data + (alpha * differences)
         interpolates = Variable(interpolates, requires_grad=True)
@@ -85,27 +85,23 @@ class LitAC(pl.LightningModule):
         distance_penalty = torch.mean(torch.log(1 + (z - fake_z).pow(2)) * weight_var.pow(-2))
         distance_penalty += torch.mean(torch.log(1 + (real_z - z).pow(2)) * weight_var.pow(-2))
         
-        # actor_loss = -torch.mean(torch.clip(F.sigmoid(z_critic_out), 1e-15, 1 - 1e-15).log()) \
-        #                 -torch.mean(torch.clip(F.sigmoid(z_critic_real), 1e-15, 1 - 1e-15).log())
-        actor_loss = F.binary_cross_entropy(z_critic_out, actor, size_average=False)\
-                        + F.binary_cross_entropy(z_critic_real, actor, size_average=False)
-        # print(actor_loss.shape, distance_penalty.shape)
+        actor_loss = -torch.mean(torch.clip(F.sigmoid(z_critic_out), 1e-15, 1 - 1e-15).log()) \
+                        -torch.mean(torch.clip(F.sigmoid(z_critic_real), 1e-15, 1 - 1e-15).log())
         return {'distance_penalty': distance_penalty, 
                     'actor_loss': actor_loss, 
-                    'loss': actor_loss + 0.00001 * distance_penalty}
+                    'loss': actor_loss + 0.1 * distance_penalty}
         
     def training_step(self, batch, batch_idx, optimizer_idx = 0):
         real_img, real_attr = batch
         bs = real_img.shape[0]
-        real_r = torch.ones(bs,1)
-        fake_r = torch.zeros(bs,1)
-        fake_z_prior = torch.randn(bs, self.d_model)
-        fake_attr = self.fake_attr_generate(bs)
+        real_r = torch.ones(bs,1).to(self.device)
+        fake_r = torch.zeros(bs,1).to(self.device)
+        fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
+        fake_attr = self.fake_attr_generate(bs).to(self.device)
         with torch.no_grad():
             mu, var = self.vae_model.encode(real_img)
         real_z = self.vae_model.reparameterize(mu, var)
         
-        self.curr_device = real_img.device
 
         if  np.random.rand(1) < 0.1:
             all_z = torch.cat([real_z, fake_z_prior, real_z], dim=0) 
@@ -123,8 +119,6 @@ class LitAC(pl.LightningModule):
         loss = critic_loss['loss']
         
         if batch_idx > 0 and batch_idx % 10 == 0:
-            # fake_z = torch.randn(bs, self.d_model)
-            # fake_z = copy.deepcopy(fake_z)
             fake_z_gen = self.actor(fake_z_prior, real_attr) 
             real_z_gen = self.actor(real_z, real_attr)
             zg_critic_out = self.critic(fake_z_gen, real_attr)
@@ -142,7 +136,7 @@ class LitAC(pl.LightningModule):
     def validation_step(self, batch, batch_idx, optimizer_idx = 0):
         real_img, real_attr = batch
         bs = real_img.shape[0]
-        fake_z_prior = torch.randn(bs, self.d_model)
+        fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
         with torch.no_grad():
             mu, var = self.vae_model.encode(real_img)
         real_z = self.vae_model.reparameterize(mu, var)
@@ -162,8 +156,8 @@ class LitAC(pl.LightningModule):
     def sample_images(self):
         # Get sample reconstruction image            
         test_input, test_label = next(iter(self.trainer.datamodule.test_dataloader()))
-        test_input = test_input.to(self.curr_device)
-        test_label = test_label.to(self.curr_device)
+        test_input = test_input.to(self.device)
+        test_label = test_label.to(self.device)
         bs = test_input.shape[0]
 #         test_input, test_label = batch
         
