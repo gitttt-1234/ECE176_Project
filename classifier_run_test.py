@@ -5,7 +5,7 @@ import argparse
 import numpy as np
 from pathlib import Path
 from models import *
-from ac_experiment import ACEXperiment
+from classifier_test_exp import ClassifierExperiment
 import torch.backends.cudnn as cudnn
 from pytorch_lightning import Trainer
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -20,12 +20,18 @@ parser.add_argument('--config',  '-c',
                     dest="filename",
                     metavar='FILE',
                     help =  'path to the config file',
-                    default='configs/vae.yaml')
+                    default='configs/classifier.yaml')
 parser.add_argument('--vae-config',  '-vc',
                     dest="vfilename",
                     metavar='FILE',
                     help =  'path to the config file',
                     default='configs/vae.yaml')
+                    
+parser.add_argument('--ac-config',  '-ac',
+                    dest="acfilename",
+                    metavar='FILE',
+                    help =  'path to the config file',
+                    default='configs/ac.yaml')
 
 args = parser.parse_args()
 with open(args.filename, 'r') as file:
@@ -40,22 +46,40 @@ with open(args.vfilename, 'r') as file:
     except yaml.YAMLError as exc:
         print(exc)
 
+with open(args.acfilename, 'r') as file:
+    try:
+        acconfig = yaml.safe_load(file)
+    except yaml.YAMLError as exc:
+        print(exc)
 
 tb_logger =  TensorBoardLogger(save_dir=config['logging_params']['save_dir'],
-                               name=config['model_params']['name'],)
+                               name=config['logging_params']['name'],)
 
 # For reproducibility
 seed_everything(config['exp_params']['manual_seed'], True)
 
-acmodel = vae_models[config['model_params']['name']](**config['model_params'])
+model = vae_models[config['model_params']['name']](**config['model_params'])
+
+
+
 vaemodel = vae_models[vconfig['model_params']['name']](**vconfig['model_params'])
 state_dict = torch.load(config['model_params']['vae_ckpt'])['state_dict']
 for key in list(state_dict.keys()):
     state_dict[key.replace("model.","")] = state_dict.pop(key)
 vaemodel.load_state_dict(state_dict, strict=False)
-experiment = ACEXperiment(vaemodel,
-                            acmodel,
-                          config['exp_params'])
+
+acmodel = vae_models[acconfig['model_params']['actor_name']](**acconfig['model_params'])
+state_dict = torch.load(config['model_params']['ac_ckpt'])['state_dict']
+for key in list(state_dict.keys()):
+    state_dict[key.replace("model.","")] = state_dict.pop(key)
+acmodel.load_state_dict(state_dict, strict=False)
+
+
+
+#exp_flag = config['model_params']['exp_flag']
+exp_flag=1
+experiment = ClassifierExperiment(model,vaemodel,acmodel,exp_flag,
+                    config['exp_params'])
 
 data = VAEDataset(**config["data_params"], pin_memory=config['trainer_params']['gpus'])
 
@@ -73,10 +97,6 @@ runner = Trainer(logger=tb_logger,
                  **config['trainer_params'])
 
 
-Path(f"{tb_logger.log_dir}/Samples").mkdir(exist_ok=True, parents=True)
-Path(f"{tb_logger.log_dir}/Reconstructions").mkdir(exist_ok=True, parents=True)
-Path(f"{tb_logger.log_dir}/Sample_Z_G").mkdir(exist_ok=True, parents=True)
-Path(f"{tb_logger.log_dir}/Sample_Prior_G").mkdir(exist_ok=True, parents=True)
 
 print(f"======= Training {config['model_params']['name']} =======")
 runner.fit(experiment, datamodule=data)
