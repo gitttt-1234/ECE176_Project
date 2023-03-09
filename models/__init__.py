@@ -6,12 +6,14 @@ from .actor import *
 from .critic import *
 from .critic_attr import *
 from .classifier import *
+from .classifier_mnist import *
 
 
 # Aliases
 VAE = VanillaVAE
 GaussianVAE = VanillaVAE
 VanillaVAEMNIST = VanillaVAEMNIST
+ClassifierMNIST = ClassifierMNIST
 
 vae_models = {
               'VanillaVAE':VanillaVAE,
@@ -21,4 +23,5 @@ vae_models = {
               'Critic': Critic,
               'Critic_Attr': Critic_Attr,
               'Classifier': Classifier,
+              'ClassifierMNIST':ClassifierMNIST
               }
