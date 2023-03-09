@@ -6,6 +6,7 @@ from .actor import *
 from .critic import *
 from .critic_attr import *
 from .classifier import *
+from .classifier_mnist import *
 
 
 # Aliases
