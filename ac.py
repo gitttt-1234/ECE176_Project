@@ -10,7 +10,6 @@ from utils import data_loader
 import pytorch_lightning as pl
 from torchvision import transforms
 import torchvision.utils as vutils
-from torchvision.datasets import CelebA
 from torch.utils.data import DataLoader
 
 
@@ -190,7 +189,7 @@ class LitAC(pl.LightningModule):
         try:
             for i in range(self.num_labels):
                 test_labels = self.labels[i]
-                test_labels = test_labels.expand(64,-1)
+                test_labels = test_labels.expand(64,-1).to(self.device)
 
                 sample = torch.randn(64, self.d_model).to(self.device)
                 sample = self.actor(sample, test_labels)

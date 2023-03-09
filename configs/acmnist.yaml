@@ -1,0 +1,37 @@
+model_params:
+  vae_ckpt: '/content/drive/MyDrive/ECE176_Project/logs/VanillaVAEMNIST/version_9/checkpoints/last.ckpt'
+  actor_name: 'Actor'
+  critic_name: 'Critic'
+  name: 'Actor-Critic'
+  latent_dim: 1024
+  hidden_dim: 512
+  layer_num: 4
+  num_label: 10
+  num_output: 10
+
+data_params:
+  data_path: "../data/"
+  train_batch_size: 128
+  val_batch_size:  128
+  patch_size: 28
+  num_workers: 4
+  num_labels: 10
+
+
+exp_params:
+  actor_LR: 0.0001
+  critic_LR: 0.0001
+  weight_decay: 0.0
+  scheduler_gamma: 0.95
+  kld_weight: 0.00025
+  manual_seed: 1265
+  latent_dim: 1024
+  num_labels: 10
+
+trainer_params:
+  gpus: [0]
+  max_epochs: 300
+
+logging_params:
+  save_dir: "logs/"
+  name: "ACVAEMNIST"
