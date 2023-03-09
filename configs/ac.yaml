@@ -14,13 +14,13 @@ data_params:
   train_batch_size: 128
   val_batch_size:  128
   patch_size: 64
-  num_workers: 4
+  num_workers: 8
   num_labels: 10
 
 
 exp_params:
-  actor_LR: 0.0001
-  critic_LR: 0.0001
+  actor_LR: 0.0003
+  critic_LR: 0.0003
   weight_decay: 0.0
   scheduler_gamma: 0.95
   kld_weight: 0.00025
@@ -30,7 +30,8 @@ exp_params:
 
 trainer_params:
   gpus: [0]
-  max_epochs: 100
+  max_epochs: 300
+  resume_from_checkpoint: '/home/chandramouli/Documents/UCSD-Assignments/ECE-176/ECE176_Project/logs/ACVAE/version_14/checkpoints/last.ckpt'
 
 logging_params:
   save_dir: "logs/"

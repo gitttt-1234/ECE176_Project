@@ -113,7 +113,7 @@ class LitAC(pl.LightningModule):
             loss = critic_loss['loss']
             return loss
         
-        if optimizer_idx == 0 and batch_idx > 0 and batch_idx % 10 == 0:
+        if optimizer_idx == 0 and batch_idx > 0 and batch_idx % 2 == 0:
             fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
             fake_z_gen = self.actor(fake_z_prior, real_attr) 
             zg_critic_out = self.critic(fake_z_gen, real_attr)
