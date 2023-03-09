@@ -1,18 +1,18 @@
 model_params:
-  vae_ckpt: '/content/drive/MyDrive/ECE176_Project/logs/VanillaVAEMNIST/version_9/checkpoints/last.ckpt'
+  vae_ckpt: './logs/VanillaVAEMNIST/version_0/checkpoints/last.ckpt'
   actor_name: 'Actor'
   critic_name: 'Critic'
   name: 'Actor-Critic'
   latent_dim: 1024
-  hidden_dim: 512
+  hidden_dim: 2048
   layer_num: 4
   num_label: 10
   num_output: 10
 
 data_params:
   data_path: "../data/"
-  train_batch_size: 128
-  val_batch_size:  128
+  train_batch_size: 64
+  val_batch_size:  64
   patch_size: 28
   num_workers: 4
   num_labels: 10

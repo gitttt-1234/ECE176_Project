@@ -57,7 +57,7 @@ class LitAC(pl.LightningModule):
         """
         :return:
         """
-        loss = F.binary_cross_entropy(pred, target, size_average=True)
+        loss = F.binary_cross_entropy(pred, target, reduction='mean')
         bs = all_z.shape[0]
         real_data = all_z[:bs // 3]
         fake_data = all_z[bs // 3: (2 * bs) // 3]
@@ -69,70 +69,70 @@ class LitAC(pl.LightningModule):
         interp_pred = self.critic(interpolates, real_attr)
         slopes = (grad(interp_pred.sum(), interpolates)[0].square().sum(dim=-1) + 1e-10).sqrt()
         gradient_penalty = torch.mean((slopes - 1.)**2)
-        return {'loss': loss + 10 * gradient_penalty, 
+        return {'loss': loss + 1e+0 * gradient_penalty, 
                     'critic_loss': loss,
                     'gradient_loss': gradient_penalty}
     
     def actor_loss_function(self, var,
                                 z, 
-                                real_z, 
-                                fake_z,
-                                z_critic_out, 
-                                z_critic_real, 
-                                actor,):
+                                z_gen, 
+                                z_critic):
         weight_var = torch.mean(var, 0, True)
-        distance_penalty = torch.mean(torch.log(1 + (z - fake_z).pow(2)) * weight_var.pow(-2))
-        distance_penalty += torch.mean(torch.log(1 + (real_z - z).pow(2)) * weight_var.pow(-2))
+        distance_penalty = torch.mean(torch.sum((torch.log(1 + (z_gen - z).pow(2))) * weight_var.pow(-2), 1), 0)
         
-        actor_loss = -torch.mean(torch.clip(F.sigmoid(z_critic_out), 1e-15, 1 - 1e-15).log()) \
-                        -torch.mean(torch.clip(F.sigmoid(z_critic_real), 1e-15, 1 - 1e-15).log())
+        actor_loss = -torch.mean(torch.clip(z_critic, 1e-15, 1 - 1e-15).log())
         return {'distance_penalty': distance_penalty, 
                     'actor_loss': actor_loss, 
-                    'loss': actor_loss + 0.1 * distance_penalty}
+                    'loss': actor_loss,}# + 1e-1 * distance_penalty}
         
-    def training_step(self, batch, batch_idx, optimizer_idx = 0):
+    def training_step(self, batch, batch_idx, optimizer_idx):
         real_img, real_attr = batch
         bs = real_img.shape[0]
         real_r = torch.ones(bs,1).to(self.device)
         fake_r = torch.zeros(bs,1).to(self.device)
-        fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
         fake_attr = self.fake_attr_generate(bs).to(self.device)
         with torch.no_grad():
-            mu, var = self.vae_model.encode(real_img)
+                mu, var = self.vae_model.encode(real_img)
         real_z = self.vae_model.reparameterize(mu, var)
+            
+        if optimizer_idx == 1:
+            fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
+            if  np.random.rand(1) < 0.1:
+                all_z = torch.cat([real_z, fake_z_prior, real_z], dim=0) 
+            else:
+                z_g = self.actor(fake_z_prior, real_attr)		
+                all_z = torch.cat([real_z, z_g, real_z], dim=0) 
+            all_attr = torch.cat([real_attr, real_attr, fake_attr],dim=0)
+            all_r = torch.cat([real_r, fake_r, fake_r])
+            
+            logit_out = self.critic(all_z, all_attr)
+            critic_loss = self.critic_loss_function(logit_out, 
+                                                        all_r,
+                                                        all_z,
+                                                        all_attr)
+            loss = critic_loss['loss']
+            return loss
         
-
-        if  np.random.rand(1) < 0.1:
-            all_z = torch.cat([real_z, fake_z_prior, real_z], dim=0) 
-        else:
-            z_g = self.actor(fake_z_prior, real_attr)		
-            all_z = torch.cat([real_z, z_g, real_z], dim=0) 
-        all_attr = torch.cat([real_attr, real_attr, fake_attr],dim=0)
-        all_r = torch.cat([real_r, fake_r, fake_r])
-        
-        logit_out = self.critic(all_z, all_attr)
-        critic_loss = self.critic_loss_function(logit_out, 
-                                                    all_r,
-                                                    all_z,
-                                                    all_attr)
-        loss = critic_loss['loss']
-        
-        if batch_idx > 0 and batch_idx % 10 == 0:
+        if optimizer_idx == 0 and batch_idx > 0 and batch_idx % 10 == 0:
+            fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
             fake_z_gen = self.actor(fake_z_prior, real_attr) 
-            real_z_gen = self.actor(real_z, real_attr)
             zg_critic_out = self.critic(fake_z_gen, real_attr)
+            
+            real_z_gen = self.actor(real_z, real_attr)
             zg_critic_real = self.critic(real_z_gen, real_attr)
             actor_loss = self.actor_loss_function(var, 
-                                                                real_z,
-                                                                real_z_gen, 
-                                                                fake_z_gen, 
-                                                                zg_critic_out, 
-                                                                zg_critic_real, 
-                                                                real_r)
+                                                        real_z,
+                                                        real_z_gen,
+                                                        zg_critic_real,)
+            loss = actor_loss['loss']
+            actor_loss = self.actor_loss_function(var, 
+                                                        fake_z_prior,
+                                                        fake_z_gen, 
+                                                        zg_critic_out,)
             loss += actor_loss['loss']
-        return loss
+            return loss
 
-    def validation_step(self, batch, batch_idx, optimizer_idx = 0):
+    def validation_step(self, batch, batch_idx):
         real_img, real_attr = batch
         bs = real_img.shape[0]
         fake_z_prior = torch.randn(bs, self.d_model).to(self.device)
@@ -189,7 +189,7 @@ class LitAC(pl.LightningModule):
         try:
             for i in range(self.num_labels):
                 test_labels = self.labels[i]
-                test_labels = test_labels.expand(64,-1).to(self.device)
+                test_labels = test_labels.expand(64, -1).to(self.device)
 
                 sample = torch.randn(64, self.d_model).to(self.device)
                 sample = self.actor(sample, test_labels)
@@ -198,7 +198,7 @@ class LitAC(pl.LightningModule):
                 vutils.save_image(samples.cpu().data,
                               os.path.join(self.logger.log_dir , 
                                            "Samples",      
-                                           f"{self.logger.name}_Epoch_{self.current_epoch}_Testlabel_{i}.png"),
+                                           f"{self.logger.name}_Testlabel_{i}.png"),
                               normalize=True,
                               nrow=12)
         except Warning:
@@ -209,13 +209,14 @@ class LitAC(pl.LightningModule):
         optims = []
         scheds = []
 
-        optimizer = optim.Adam(self.actor.parameters(),
+        optimizer_a = optim.Adam(self.actor.parameters(),
                                lr=self.params['actor_LR'],
                                weight_decay=self.params['weight_decay'])
-        optimizer = optim.Adam(self.critic.parameters(),
+        optimizer_c = optim.Adam(self.critic.parameters(),
                                lr=self.params['critic_LR'],
                                weight_decay=self.params['weight_decay'])
-        optims.append(optimizer)
+        optims.append(optimizer_a)
+        optims.append(optimizer_c)
         # Check if more than 1 optimizer is required (Used for adversarial training)
         try:
             if self.params['LR_2'] is not None:

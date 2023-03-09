@@ -1,10 +1,10 @@
 model_params:
-  vae_ckpt: '/logs/VanillaVAE/version_2/checkpoints/last.ckpt'
+  vae_ckpt: './logs/VanillaVAE/version_2/checkpoints/last.ckpt'
   actor_name: 'Actor'
   critic_name: 'Critic'
   name: 'Actor-Critic'
   latent_dim: 1024
-  hidden_dim: 512
+  hidden_dim: 2048
   layer_num: 4
   num_label: 10
   num_output: 10
