@@ -42,18 +42,18 @@ def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmod
             y = y.to(device=device)
             if(exp_flag!=0):
                     bs = x.shape[0]
-                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//3,))
+                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//2,))
                     if exp_flag == 1:
                         with torch.no_grad():
                             mu, var = vaemodel.encode(x[random_indices_img_z])
-                            noise = torch.randn(mu.shape)*0.1
-                            #noise = torch.normal(mean=0.0, std=0.1,size=mu.shape)
+                            #noise = torch.randn(mu.shape)*0.1
+                            noise = torch.normal(mean=0.0, std=0.1,size=mu.shape)
                             noise = noise.to(device=device, dtype=dtype)
                             real_z = vaemodel.reparameterize(mu+noise, var+noise)
                             img_gen = vaemodel.decode(real_z)
                     elif exp_flag == 2:  
                         with torch.no_grad():
-                            fake_z = torch.randn(bs // 3, latent_dim)
+                            fake_z = torch.randn(bs // 2, latent_dim)
                             fake_z = fake_z.to(device=device, dtype=dtype)
                             
                             labels = torch.eye(num_class)
@@ -128,17 +128,23 @@ with open(args.acfilename, 'r') as file:
 
 vaemodel = vae_models[vconfig['model_params']['name']](**vconfig['model_params'])
 state_dict = torch.load(config['model_params']['vae_ckpt'])['state_dict']
+
 for key in list(state_dict.keys()):
     state_dict[key.replace("model.","")] = state_dict.pop(key)
-vaemodel.load_state_dict(state_dict, strict=False)
+vaemodel.load_state_dict(state_dict, strict=True)
 vaemodel = vaemodel.to(device=device)
+vaemodel.eval()
 
 acmodel = vae_models[acconfig['model_params']['actor_name']](**acconfig['model_params'])
 state_dict = torch.load(config['model_params']['ac_ckpt'])['state_dict']
+
 for key in list(state_dict.keys()):
-    state_dict[key.replace("model.","")] = state_dict.pop(key)
+    new_key = key.split('.',1)[1]
+    state_dict[new_key] = state_dict.pop(key)
+
 acmodel.load_state_dict(state_dict, strict=False)
 acmodel = acmodel.to(device=device)
+acmodel.eval()
 
 latent_dim = acconfig['model_params']['latent_dim']
 
