@@ -13,6 +13,9 @@ from pytorch_lightning.utilities.seed import seed_everything
 from dataset_mnist import VAEDataset
 import torch.nn.functional as F
 import argparse
+import os
+from pathlib import Path
+import torchvision.utils as vutils
 import numpy as np
 
 
@@ -43,6 +46,12 @@ def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmod
             if(exp_flag!=0):
                     bs = x.shape[0]
                     random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//2,))
+                    vutils.save_image(x[random_indices_img_z],
+                          os.path.join(log_dir, 
+                                       "input_mnist", 
+                                       f"input_Epoch_{i}.png"),
+                          normalize=True,
+                          nrow=12)
                     if exp_flag == 1:
                         with torch.no_grad():
                             mu, var = vaemodel.encode(x[random_indices_img_z])
@@ -64,7 +73,12 @@ def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmod
                             
                             z_g = acmodel(fake_z, labels)
                             img_gen = vaemodel.decode(z_g)
-                    
+                    vutils.save_image(img_gen,
+                          os.path.join(log_dir, 
+                                       "recons_mnist", 
+                                       f"input_Epoch_{i}.png"),
+                          normalize=True,
+                          nrow=12)
                     x[random_indices_img_z] = img_gen
             scores = model(x)
             loss = F.cross_entropy(scores, y)
@@ -163,6 +177,8 @@ data_path = config['data_params']['data_path']
 exp_flag = config['model_params']['exp_flag']
 patch_size = config['data_params']['patch_size']
 
+print("exp flag: ",exp_flag)
+
 train_transform = transform = T.Compose([
                 T.Resize(patch_size),
                 T.ToTensor(),
@@ -188,6 +204,12 @@ num_class = config['model_params']['n_class']
 learning_rate = config['exp_params']['LR']
 weight_decay = config['exp_params']['weight_decay']
 epochs = config['trainer_params']['max_epochs']
+
+log_dir = config['logging_params']['save_dir']
+
+
+Path(f"{log_dir}/input_mnist").mkdir(exist_ok=True, parents=True)
+Path(f"{log_dir}/recons_mnist").mkdir(exist_ok=True, parents=True)
 
 model = ClassifierMNIST(in_channels=in_channels,num_outputs=num_class)
 optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)

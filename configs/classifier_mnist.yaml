@@ -1,10 +1,10 @@
 model_params:
-  vae_ckpt: './logs/VanillaVAE/version_2/checkpoints/last.ckpt'
-  ac_ckpt: './logs/ACVAE/version_2/checkpoints/last.ckpt'
+  vae_ckpt: './logs/VanillaVAEMNIST/version_0/checkpoints/last.ckpt'
+  ac_ckpt: './logs/ACVAEMNIST/version_4/checkpoints/last.ckpt'
   name: 'ClassifierMNIST'
   in_channels: 1
   n_class: 10
-  exp_flag: 1
+  exp_flag: 0
 
 
 data_params:

@@ -13,23 +13,15 @@ class ClassifierMNIST(nn.Module):
         super(ClassifierMNIST, self).__init__()
 
         modules=[]
-        for num in range(3):
-            if num==0:
-                modules.append(
+        modules.append(
                     nn.Sequential(
-                        nn.Linear(784,1024),
-                        nn.BatchNorm1d(1024),
+                        nn.Linear(784,128),
+                        nn.BatchNorm1d(128),
                         nn.LeakyReLU())
                 )
-            else:
-                modules.append(
-                    nn.Sequential(
-                        nn.Linear(1024,1024),
-                        nn.BatchNorm1d(1024),
-                        nn.LeakyReLU())
-                )
+        
         self.encoder = nn.Sequential(*modules)
-        self.linear = nn.Linear(1024,num_outputs)
+        self.linear = nn.Linear(128,num_outputs)
         self.relu = nn.LeakyReLU()
 
     

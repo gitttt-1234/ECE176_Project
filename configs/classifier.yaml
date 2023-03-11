@@ -1,14 +1,14 @@
 model_params:
-  vae_ckpt: './logs/VanillaVAE/version_2/checkpoints/last.ckpt'
-  ac_ckpt: './logs/ACVAE/version_2/checkpoints/last.ckpt'
+  vae_ckpt: './logs/VanillaVAE/version_0/checkpoints/last.ckpt'
+  ac_ckpt: './logs/ACVAE/version_0/checkpoints/last.ckpt'
   name: 'Classifier'
   in_channels: 3
   n_class: 10
-  exp_flag: 1
+  exp_flag: 2
 
 
 data_params:
-  data_path: "/content/drive/MyDrive/ECE176_PR - Copy/data/"
+  data_path: "./data/"
   train_batch_size: 64
   val_batch_size:  64
   patch_size: 64
