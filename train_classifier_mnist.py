@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import sampler
 import torchvision.datasets as dset
 from pytorch_lightning.loggers import TensorBoardLogger
+import matplotlib.pyplot as plt
 import torchvision.transforms as T
 import yaml
 from pytorch_lightning.utilities.seed import seed_everything
@@ -34,49 +35,40 @@ def check_accuracy(loader, model):
             n_samples += preds.size(0)
         acc = float(n_corr) / n_samples
         print('Accuracy (%.2f)' % (100 * acc))
+        return acc
 
 def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmodel):
     device = torch.device('cuda')
-    model = model.to(device=device)  
+    model = model.to(device=device)
+    accuracies = []
     for i in range(epochs):
         for t, (x, y) in enumerate(loader_train):
             model.train()
             x = x.to(device=device)
             y = y.to(device=device)
-            if(exp_flag!=0):
+            if(exp_flag==1):
                     bs = x.shape[0]
-                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//2,))
+                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//5,))
                     vutils.save_image(x[random_indices_img_z],
                           os.path.join(log_dir, 
                                        "input_mnist", 
                                        f"input_Epoch_{i}.png"),
                           normalize=True,
                           nrow=12)
-                    if exp_flag == 1:
-                        with torch.no_grad():
-                            mu, var = vaemodel.encode(x[random_indices_img_z])
-                            #noise = torch.randn(mu.shape)*0.1
-                            noise = torch.normal(mean=0.0, std=0.1,size=mu.shape)
-                            noise = noise.to(device=device, dtype=dtype)
-                            real_z = vaemodel.reparameterize(mu+noise, var+noise)
-                            img_gen = vaemodel.decode(real_z)
-                    elif exp_flag == 2:  
-                        with torch.no_grad():
-                            fake_z = torch.randn(bs // 2, latent_dim)
-                            fake_z = fake_z.to(device=device, dtype=dtype)
+                    
+                    with torch.no_grad():
+                        fake_z = torch.randn(bs // 5, latent_dim)
+                        fake_z = fake_z.to(device=device, dtype=dtype)
                             
-                            labels = torch.eye(num_class)
-                            labels = labels.to(device=device)
-                            labels = labels[y[random_indices_img_z]]
-                            
-                             
-                            
-                            z_g = acmodel(fake_z, labels)
-                            img_gen = vaemodel.decode(z_g)
+                        labels = torch.eye(num_class)
+                        labels = labels.to(device=device)
+                        labels = labels[y[random_indices_img_z]]
+                        z_g = acmodel(fake_z, labels)
+                        img_gen = vaemodel.decode(z_g)
                     vutils.save_image(img_gen,
                           os.path.join(log_dir, 
                                        "recons_mnist", 
-                                       f"input_Epoch_{i}.png"),
+                                       f"recons_Epoch_{i}.png"),
                           normalize=True,
                           nrow=12)
                     x[random_indices_img_z] = img_gen
@@ -91,9 +83,9 @@ def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmod
 
            
         print(('Epoch %d, loss = %.4f' % (i, loss.item())))
-        check_accuracy(loader_val, model)
+        accuracies.append(check_accuracy(loader_val, model))
         print()
-                
+    return accuracies           
 
 
 #############################################################################################################
@@ -161,62 +153,56 @@ acmodel = acmodel.to(device=device)
 acmodel.eval()
 
 latent_dim = acconfig['model_params']['latent_dim']
-
-
-
-# data = VAEDataset(**config["data_params"], pin_memory=config['trainer_params']['gpus'])
-# data.setup()
-
-# loader_train = data.train_dataloader()
-# loader_val = data.val_dataloader()
-
-NUM_TRAIN = 59000
+NUM_TRAIN = 60000
 train_batch_size= config['data_params']['train_batch_size']
 val_batch_size = config['data_params']['val_batch_size']
 data_path = config['data_params']['data_path']
-exp_flag = config['model_params']['exp_flag']
 patch_size = config['data_params']['patch_size']
+in_channels= config['model_params']['in_channels']
+num_class = config['model_params']['n_class']
+learning_rate = config['exp_params']['LR']
+weight_decay = config['exp_params']['weight_decay']
+epochs = 50
 
-print("exp flag: ",exp_flag)
+log_dir = config['logging_params']['save_dir']
 
 train_transform = transform = T.Compose([
                 T.Resize(patch_size),
                 T.ToTensor(),
-                T.Normalize((0.5071), (0.2675))
+                T.Normalize((0.5), (0.25))
                 
             ])
 mnist_train = dset.MNIST(data_path, train=True, download=True,
                              transform=train_transform)
 loader_train = DataLoader(mnist_train, batch_size=train_batch_size, num_workers=2,
-                          sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)))
-
-mnist_val = dset.MNIST(data_path, train=True, download=True,
-                          transform=transform)
-loader_val = DataLoader(mnist_val, batch_size=val_batch_size, num_workers=2, 
-                        sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN, 60000)))
+                          shuffle=True)
 
 mnist_test = dset.MNIST(data_path, train=False, download=True, 
                             transform=transform)
-loader_test = DataLoader(mnist_test, batch_size=val_batch_size, num_workers=2)
-
-in_channels= config['model_params']['in_channels']
-num_class = config['model_params']['n_class']
-learning_rate = config['exp_params']['LR']
-weight_decay = config['exp_params']['weight_decay']
-epochs = config['trainer_params']['max_epochs']
-
-log_dir = config['logging_params']['save_dir']
+loader_val = DataLoader(mnist_test, batch_size=val_batch_size, num_workers=2)
 
 
 Path(f"{log_dir}/input_mnist").mkdir(exist_ok=True, parents=True)
 Path(f"{log_dir}/recons_mnist").mkdir(exist_ok=True, parents=True)
+acc=[]
+print("MNIST")
+for exp_flag in range(0,2):
+    if(exp_flag==0):
+        print("---------------MNIST generic classifer---------------")
+    else:
+        print("---------------MNIST classifer with latent constraints---------------")
+    model = ClassifierMNIST(in_channels=in_channels,num_outputs=num_class)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    acc.append(train_classifier(model,optimizer,epochs,exp_flag,latent_dim,vaemodel,acmodel))
+    print("\n")
+    
+plt.figure()
+plt.plot(range(1,epochs+1),acc[0],label='generic classifer')
+plt.plot(range(1,epochs+1),acc[1],label='classifer with latent constraints')
+plt.xlabel("Epochs")
+plt.ylabel("Accuracies")
+plt.legend()
+plt.show()
 
-model = ClassifierMNIST(in_channels=in_channels,num_outputs=num_class)
-optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-train_classifier(model,optimizer,epochs,exp_flag,latent_dim,vaemodel,acmodel)
 
-#test
-print("\n")
-print("Test accuracy")
-check_accuracy(loader_test, model)
                 

@@ -8,7 +8,7 @@ model_params:
 
 
 data_params:
-  data_path: "/content/drive/MyDrive/ECE176_PR/data/"
+  data_path: "./data/"
   train_batch_size: 64
   val_batch_size:  64
   patch_size: 28

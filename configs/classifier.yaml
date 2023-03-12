@@ -4,7 +4,6 @@ model_params:
   name: 'Classifier'
   in_channels: 3
   n_class: 10
-  exp_flag: 2
 
 
 data_params:
@@ -17,8 +16,8 @@ data_params:
 
 
 exp_params:
-  LR: 0.005
-  weight_decay: 0.0
+  LR: 0.0005
+  weight_decay: 0.00001
   manual_seed: 1265
 
 trainer_params:

@@ -6,7 +6,7 @@ import torch.optim as optim
 import os
 from pathlib import Path
 import torchvision.utils as vutils
-
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torch.utils.data import sampler
 import torchvision.datasets as dset
@@ -18,7 +18,6 @@ from dataset import VAEDataset
 import torch.nn.functional as F
 import argparse
 import numpy as np
-
 
 def check_accuracy(loader, model):
     device = torch.device('cuda')
@@ -35,45 +34,36 @@ def check_accuracy(loader, model):
             n_samples += preds.size(0)
         acc = float(n_corr) / n_samples
         print('Accuracy (%.2f)' % (100 * acc))
+        return acc
 
 def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmodel):
     device = torch.device('cuda')
-    model = model.to(device=device)  
+    model = model.to(device=device)
+    accuracies = []
     for i in range(epochs):
         for t, (x, y) in enumerate(loader_train):
             model.train()
             x = x.to(device=device)
             y = y.to(device=device)
-            if(exp_flag!=0):
+            if(exp_flag==1):
                     bs = x.shape[0]
-                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//10,))
+                    random_indices_img_z = torch.randint(low=0, high=bs, size=(bs//5,))
                     vutils.save_image(x[random_indices_img_z],
                           os.path.join(log_dir, 
                                        "input_cifar", 
                                        f"input_Epoch_{i}.png"),
                           normalize=True,
                           nrow=12)
-                    if exp_flag == 1:
-                        with torch.no_grad():
-                            mu, var = vaemodel.encode(x[random_indices_img_z])
-                            #noise = torch.randn(mu.shape)*0.1
-                            noise = torch.normal(mean=0.0, std=0.1,size=mu.shape)
-                            noise = noise.to(device=device, dtype=dtype)
-                            real_z = vaemodel.reparameterize(mu+noise, var+noise)
-                            img_gen = vaemodel.decode(real_z)
-                    elif exp_flag == 2:  
-                        with torch.no_grad():
-                            fake_z = torch.randn(bs // 10, latent_dim)
-                            fake_z = fake_z.to(device=device, dtype=dtype)
+                    
+                    with torch.no_grad():
+                        fake_z = torch.randn(bs // 5, latent_dim)
+                        fake_z = fake_z.to(device=device, dtype=dtype)
                             
-                            labels = torch.eye(num_class)
-                            labels = labels.to(device=device)
-                            labels = labels[y[random_indices_img_z]]
-                            
-                             
-                            
-                            z_g = acmodel(fake_z, labels)
-                            img_gen = vaemodel.decode(z_g)
+                        labels = torch.eye(num_class)
+                        labels = labels.to(device=device)
+                        labels = labels[y[random_indices_img_z]]
+                        z_g = acmodel(fake_z, labels)
+                        img_gen = vaemodel.decode(z_g)
                     vutils.save_image(img_gen,
                           os.path.join(log_dir, 
                                        "recons_cifar", 
@@ -92,13 +82,12 @@ def train_classifier(model, optimizer, epochs,exp_flag,latent_dim,vaemodel,acmod
 
            
         print(('Epoch %d, loss = %.4f' % (i, loss.item())))
-        check_accuracy(loader_val, model)
+        accuracies.append(check_accuracy(loader_val, model))
         print()
-                
+    return accuracies            
 
 
 #############################################################################################################
-
 
 device = torch.device('cuda')
 dtype = torch.float32
@@ -162,60 +151,54 @@ acmodel = acmodel.to(device=device)
 acmodel.eval()
 
 latent_dim = acconfig['model_params']['latent_dim']
-
-
-
-# data = VAEDataset(**config["data_params"], pin_memory=config['trainer_params']['gpus'])
-# data.setup()
-
-# loader_train = data.train_dataloader()
-# loader_val = data.val_dataloader()
-
-NUM_TRAIN = 49000
+NUM_TRAIN = 50000
 train_batch_size= config['data_params']['train_batch_size']
 val_batch_size = config['data_params']['val_batch_size']
+
 data_path = config['data_params']['data_path']
-exp_flag = config['model_params']['exp_flag']
 patch_size = config['data_params']['patch_size']
-print("exp flag: ",exp_flag)
+in_channels= config['model_params']['in_channels']
+num_class = config['model_params']['n_class']
+learning_rate = config['exp_params']['LR']
+weight_decay = config['exp_params']['weight_decay']
+log_dir = config['logging_params']['save_dir']
+
+epochs=50
+
 train_transform = transform = T.Compose([
                 T.Resize(patch_size),
                 T.ToTensor(),
-                T.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+                T.Normalize((0.5, 0.5, 0.5), (0.25, 0.25, 0.25))
                 
             ])
 cifar10_train = dset.CIFAR10(data_path, train=True, download=True,
                              transform=train_transform)
 loader_train = DataLoader(cifar10_train, batch_size=train_batch_size, num_workers=2,
-                          sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN)))
-
-cifar10_val = dset.CIFAR10(data_path, train=True, download=True,
-                          transform=transform)
-loader_val = DataLoader(cifar10_val, batch_size=val_batch_size, num_workers=2, 
-                        sampler=sampler.SubsetRandomSampler(range(NUM_TRAIN, 50000)))
+                          shuffle=True)
 
 cifar10_test = dset.CIFAR10(data_path, train=False, download=True, 
                             transform=transform)
-loader_test = DataLoader(cifar10_test, batch_size=val_batch_size, num_workers=2)
-
-in_channels= config['model_params']['in_channels']
-num_class = config['model_params']['n_class']
-learning_rate = config['exp_params']['LR']
-weight_decay = config['exp_params']['weight_decay']
-epochs = config['trainer_params']['max_epochs']
-
-log_dir = config['logging_params']['save_dir']
+loader_val = DataLoader(cifar10_test, batch_size=val_batch_size, num_workers=2)
 
 
 Path(f"{log_dir}/input_cifar").mkdir(exist_ok=True, parents=True)
 Path(f"{log_dir}/recons_cifar").mkdir(exist_ok=True, parents=True)
+acc=[]
+for exp_flag in range(0,2):
+    if(exp_flag==0):
+        
+        print("---------------CIFAR-10 generic classifer---------------")
+    else:
+        print("---------------CIFAR-10 classifer with latent constraints---------------")
+    model = Classifier(in_channels=in_channels,num_outputs=num_class)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
+    acc.append(train_classifier(model,optimizer,epochs,exp_flag,latent_dim,vaemodel,acmodel))
+    print("\n")
 
-model = Classifier(in_channels=in_channels,num_outputs=num_class)
-optimizer = optim.Adam(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
-train_classifier(model,optimizer,epochs,exp_flag,latent_dim,vaemodel,acmodel)
-
-#test
-print("\n")
-print("Test accuracy")
-check_accuracy(loader_test, model)
-                
+plt.figure()
+plt.plot(range(1,epochs+1),acc[0],label='generic classifer')
+plt.plot(range(1,epochs+1),acc[1],label='classifer with latent constraints')
+plt.xlabel("Epochs")
+plt.ylabel("Accuracies")
+plt.legend()
+plt.show()
