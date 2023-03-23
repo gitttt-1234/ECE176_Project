@@ -17,11 +17,11 @@ $ python run.py -c configs/<config-file-name.yaml>
 ```
 
 run.py - train vae model on CIFAR10
-run_vaemnist.py - train vae model on MNIST
-run_ac.py - train actor critic model
-run_ac_mnist.py - train actor critic model for MNIST
-train_classifier - train the classifier on CIFAR 10
-train_classifier_mnist - train the classifier on MNIST
+<br>run_vaemnist.py - train vae model on MNIST
+<br>run_ac.py - train actor critic model
+<br>run_ac_mnist.py - train actor critic model for MNIST
+<br>train_classifier - train the classifier on CIFAR 10
+<br>train_classifier_mnist - train the classifier on MNIST
 
 
 
